@@ -5,88 +5,59 @@ const YooCheckout = require('@a2seven/yoo-checkout');
 
 module.exports = createCoreController('api::order.order', ({ strapi }) => ({
 
-  // Стандартный метод создания заказа
-  async create(ctx) {
-    try {
-      const { productId } = ctx.request.body.data;
-
-      if (!productId) return ctx.badRequest('productId обязателен');
-
-      // Берём цену из BasePrice
-      const product = await strapi.db.query('api::base-price.base-price').findOne({
-        where: { productId },
-      });
-
-      if (!product) return ctx.notFound('Товар не найден в базе BasePrice');
-
-      // Создаём заказ с правильной суммой
-      const order = await strapi.db.query('api::order.order').create({
-        data: {
-          productId,
-          amount: product.price,
-          statusOrder: 'pending',
-        },
-      });
-
-      return ctx.send({ data: order });
-
-    } catch (err) {
-      console.error(err);
-      return ctx.internalServerError('Ошибка при создании заказа');
-    }
-  },
-
-  // Кастомный метод для оплаты через ЮKassa
   async createPayment(ctx) {
     try {
-      const { id } = ctx.request.body; // id заказа с фронтенда
+      const { id } = ctx.request.body;
+      console.log('[LOG] Получен ID заказа:', id);
 
       if (!id) return ctx.badRequest('Order id обязателен');
 
-      // Ищем заказ
-      const order = await strapi.db.query('api::order.order').findOne({
-        where: { id },
-      });
+      const order = await strapi.db.query('api::order.order').findOne({ where: { id } });
+      console.log('[LOG] Найден заказ:', order);
 
       if (!order) return ctx.notFound('Заказ не найден');
 
-      // Инициализация SDK ЮKassa
+      // Проверяем ключи
+      console.log('[LOG] YUKASSA_SHOP_ID:', process.env.YUKASSA_SHOP_ID);
+      console.log('[LOG] YUKASSA_SECRET_KEY:', process.env.YUKASSA_SECRET_KEY ? 'Задан' : 'Не задан');
+
       const checkout = new YooCheckout({
         shopId: process.env.YUKASSA_SHOP_ID,
-        secretKey: process.env.YUKASSA_SECRET_KEY
+        secretKey: process.env.YUKASSA_SECRET_KEY,
       });
 
-      // Данные для создания платежа
+      // Проверяем сумму
+      const amountValue = (order.amount / 100).toFixed(2);
+      console.log('[LOG] Сумма для платежа:', amountValue);
+
       const paymentData = {
-        amount: {
-          value: (order.amount / 100).toFixed(2), // сумма в рублях
-          currency: 'RUB'
-        },
-        confirmation: {
-          type: 'redirect',
-          return_url: 'http://localhost:3000/success' // куда вернется пользователь
-        },
+        amount: { value: amountValue, currency: 'RUB' },
+        confirmation: { type: 'redirect', return_url: 'http://localhost:3000/success' },
         description: `Оплата заказа #${order.id}`,
-        metadata: {
-          orderId: order.id
-        }
+        metadata: { orderId: order.id },
       };
+      console.log('[LOG] paymentData:', paymentData);
 
-      // Создаём платёж
-      const payment = await checkout.createPayment(paymentData);
+      let payment;
+      try {
+        payment = await checkout.createPayment(paymentData);
+        console.log('[LOG] Ответ YooCheckout:', payment);
+      } catch (sdkErr) {
+        console.error('[ERROR] Ошибка при создании платежа через YooCheckout:', sdkErr);
+        return ctx.internalServerError('Ошибка SDK YooCheckout: ' + (sdkErr.message || sdkErr));
+      }
 
-      // Сохраняем paymentId в заказе
       await strapi.db.query('api::order.order').update({
         where: { id: order.id },
-        data: { paymentId: payment.id }
+        data: { paymentId: payment.id },
       });
+      console.log('[LOG] paymentId сохранён в заказе:', payment.id);
 
-      // Отправляем фронтенду ссылку для редиректа
       return ctx.send({ confirmation_url: payment.confirmation.confirmation_url });
 
     } catch (err) {
-      console.error(err);
-      return ctx.internalServerError('Ошибка при создании платежа');
+      console.error('[ERROR] createPayment общий catch:', err);
+      return ctx.internalServerError('Ошибка при создании платежа: ' + (err.message || err));
     }
   }
 
