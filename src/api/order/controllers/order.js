@@ -5,7 +5,7 @@ const YooCheckout = require('@a2seven/yoo-checkout');
 
 module.exports = createCoreController('api::order.order', ({ strapi }) => ({
 
-  // Метод создания заказа
+  // Стандартный метод создания заказа
   async create(ctx) {
     try {
       const { productId } = ctx.request.body.data;
@@ -28,18 +28,18 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
         },
       });
 
-      ctx.send({ data: order });
+      return ctx.send({ data: order });
 
     } catch (err) {
       console.error(err);
-      ctx.internalServerError('Ошибка при создании заказа');
+      return ctx.internalServerError('Ошибка при создании заказа');
     }
   },
 
-  // Метод для оплаты через ЮKassa
+  // Кастомный метод для оплаты через ЮKassa
   async createPayment(ctx) {
     try {
-      const { id } = ctx.request.body; // id заказа из frontend
+      const { id } = ctx.request.body; // id заказа с фронтенда
 
       if (!id) return ctx.badRequest('Order id обязателен');
 
@@ -64,7 +64,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
         },
         confirmation: {
           type: 'redirect',
-          return_url: 'http://localhost:3000/success' // куда юзер вернётся после оплаты
+          return_url: 'http://localhost:3000/success' // куда вернется пользователь
         },
         description: `Оплата заказа #${order.id}`,
         metadata: {
@@ -81,7 +81,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
         data: { paymentId: payment.id }
       });
 
-      // Отправляем фронтенду ссылку для редиректа на оплату
+      // Отправляем фронтенду ссылку для редиректа
       return ctx.send({ confirmation_url: payment.confirmation.confirmation_url });
 
     } catch (err) {
