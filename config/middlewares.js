@@ -4,13 +4,10 @@ module.exports = [
   {
     name: 'strapi::cors',
     config: {
-      origin: [
-        'https://ice2508.github.io',      // твой фронтенд
-        'https://payment.yookassa.ru'    // webhook YooKassa
-      ],
+      origin: ['https://ice2508.github.io', 'https://payment.yookassa.ru'],
       headers: ['Content-Type', 'Authorization', 'Origin', 'Accept'],
       methods: ['GET','POST','PUT','DELETE','OPTIONS'],
-    }
+    },
   },
   'strapi::poweredBy',
   'strapi::logger',
