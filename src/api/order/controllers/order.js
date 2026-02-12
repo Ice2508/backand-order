@@ -1,7 +1,7 @@
 'use strict';
 
 const { createCoreController } = require('@strapi/strapi').factories;
-const YooCheckout = require('@a2seven/yoo-checkout');
+const { YooCheckout } = require('@a2seven/yoo-checkout'); // деструктуризация
 const { v4: uuidv4 } = require('uuid'); // Для idempotence key
 
 module.exports = createCoreController('api::order.order', ({ strapi }) => ({
@@ -48,13 +48,13 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       });
       console.log('[LOG] Создан заказ:', order);
 
-      // 3️⃣ Инициализация YooKassa
+      // 3️⃣ Инициализация YooKassa (без `new`)
       console.log('[LOG] Используем ключи YooKassa:',
         process.env.YUKASSA_SHOP_ID,
         process.env.YUKASSA_SECRET_KEY ? 'OK' : 'NOT FOUND'
       );
 
-      const checkout = new YooCheckout({
+      const checkout = YooCheckout({ // ✅ исправлено: вызываем как функцию
         shopId: process.env.YUKASSA_SHOP_ID,
         secretKey: process.env.YUKASSA_SECRET_KEY,
       });
@@ -83,7 +83,7 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       const payment = await checkout.createPayment(paymentData, uuidv4());
       console.log('[LOG] Платёж создан:', payment);
 
-      // 5️⃣ Сохраняем paymentId
+      // 5️⃣ Сохраняем paymentId в заказе
       const updatedOrder = await strapi.entityService.update('api::order.order', order.id, {
         data: {
           paymentId: payment.id,
