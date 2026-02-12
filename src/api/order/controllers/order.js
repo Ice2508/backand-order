@@ -1,8 +1,8 @@
 'use strict';
 
 const { createCoreController } = require('@strapi/strapi').factories;
-const { YooCheckout } = require('@a2seven/yoo-checkout'); // деструктуризация
-const { v4: uuidv4 } = require('uuid'); // Для idempotence key
+const { YooCheckout } = require('@a2seven/yoo-checkout'); 
+const { v4: uuidv4 } = require('uuid');
 
 module.exports = createCoreController('api::order.order', ({ strapi }) => ({
   async create(ctx) {
@@ -12,33 +12,24 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
       const { data } = ctx.request.body;
 
       if (!data || !data.productId) {
-        console.error('[ERROR] productId отсутствует в запросе');
         return ctx.badRequest('productId обязателен');
       }
 
       const { productId } = data;
-      console.log('[LOG] productId:', productId);
 
-      // 1️⃣ Берём цену из BasePrice
+      // 1️⃣ Ищем цену товара
       const product = await strapi.entityService.findMany('api::base-price.base-price', {
         filters: { productId },
         limit: 1,
       });
 
       if (!product || product.length === 0) {
-        console.error('[ERROR] Товар не найден для productId:', productId);
         return ctx.notFound('Товар не найден');
       }
 
       const productData = product[0];
-      console.log('[LOG] Найден продукт:', productData);
 
-      if (typeof productData.price !== 'number') {
-        console.error('[ERROR] Цена товара не задана:', productData.price);
-        return ctx.badRequest('Цена товара не задана');
-      }
-
-      // 2️⃣ Создаём заказ
+      // 2️⃣ Создаём заказ в БД
       const order = await strapi.entityService.create('api::order.order', {
         data: {
           productId,
@@ -46,25 +37,23 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
           statusOrder: 'pending',
         },
       });
-      console.log('[LOG] Создан заказ:', order);
 
-      // 3️⃣ Инициализация YooKassa (без `new`)
-      console.log('[LOG] Используем ключи YooKassa:',
-        process.env.YUKASSA_SHOP_ID,
-        process.env.YUKASSA_SECRET_KEY ? 'OK' : 'NOT FOUND'
-      );
-
-      const checkout = YooCheckout({ // ✅ исправлено: вызываем как функцию
+      // 3️⃣ Инициализация YooKassa (ОБЯЗАТЕЛЬНО с new)
+      const checkout = new YooCheckout({ // <--- ДОБАВЛЕНО 'new'
         shopId: process.env.YUKASSA_SHOP_ID,
         secretKey: process.env.YUKASSA_SECRET_KEY,
       });
 
-      const amountValue = (order.amount / 100).toFixed(2); // делим на 100, чтобы в рублях с копейками
-      console.log('[LOG] amountValue для YooKassa:', amountValue);
+      // Логика суммы: если в базе 55000 — это рубли, то просто делаем .toFixed(2)
+      // Если в базе копейки — тогда делим на 100.
+      // Судя по вашим логам (цена 55000), скорее всего это рубли.
+      const amountValue = Number(order.amount).toFixed(2); 
+      
+      console.log('[LOG] Итоговая сумма для ЮKassa:', amountValue);
 
       const paymentData = {
         amount: {
-          value: amountValue.toString(),
+          value: amountValue,
           currency: 'RUB',
         },
         confirmation: {
@@ -78,27 +67,28 @@ module.exports = createCoreController('api::order.order', ({ strapi }) => ({
         },
       };
 
-      // 4️⃣ Создаём платёж в YooKassa с уникальным ключом
-      console.log('[LOG] Создаём платёж в YooKassa...');
-      const payment = await checkout.createPayment(paymentData, uuidv4());
-      console.log('[LOG] Платёж создан:', payment);
+      // 4️⃣ Создаём платёж
+      const idempotenceKey = uuidv4();
+      const payment = await checkout.createPayment(paymentData, idempotenceKey);
+      
+      console.log('[LOG] Платёж создан успешно, ID:', payment.id);
 
-      // 5️⃣ Сохраняем paymentId в заказе
-      const updatedOrder = await strapi.entityService.update('api::order.order', order.id, {
+      // 5️⃣ Обновляем заказ, сохраняя paymentId
+      await strapi.entityService.update('api::order.order', order.id, {
         data: {
           paymentId: payment.id,
         },
       });
-      console.log('[LOG] Заказ обновлён с paymentId:', updatedOrder);
 
-      // 6️⃣ Возвращаем ссылку на оплату
       return ctx.send({
         confirmation_url: payment.confirmation.confirmation_url,
       });
 
     } catch (err) {
-      console.error('[FULL ERROR] create order + payment:', err);
-      return ctx.internalServerError(err.message || 'Ошибка при создании заказа и платежа');
+      console.error('[FULL ERROR]:', err);
+      // Если это ошибка от API ЮKassa, в ней может быть полезное описание
+      const errorMessage = err.response?.data?.description || err.message;
+      return ctx.internalServerError(`Ошибка оплаты: ${errorMessage}`);
     }
   },
 }));
