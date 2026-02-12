@@ -8,8 +8,8 @@ module.exports = [
     name: 'strapi::cors',
     config: {
       origin: [
-        'https://ice2508.github.io/frontend-order/', // здесь укажи домен фронтенда
-        'https://payment.yookassa.ru' // чтобы ЮKassa могла слать webhook
+        'https://ice2508.github.io',      // правильно, без пути
+        'https://payment.yookassa.ru'    // ЮKassa webhook
       ],
       headers: '*',
       methods: ['GET','POST','PUT','DELETE','OPTIONS']
