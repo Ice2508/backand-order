@@ -5,8 +5,14 @@ module.exports = {
       path: '/orders/webhook',
       handler: 'order.webhook',
       config: {
-        auth: false, // ЮKassa не будет авторизован
+        auth: false, // Вебхук должен быть публичным
       },
     },
-  ],
-};
+    // Оставляем стандартные роуты, если нужно
+    {
+      method: 'POST',
+      path: '/orders',
+      handler: 'order.create',
+    },
+  ]
+}
